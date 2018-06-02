@@ -25,7 +25,7 @@ Huevent need two things to work as expected.
 * Sensor-ID, the unique identifier of your button, make request to the /sensors endpoint to find your id
   * Like: `00:00:00:00:00:ca:ff:ee-f2`
 
-To find your bridge and create a user read the ![Getting Started Guide](https://developers.meethue.com/documentation/getting-started)
+To find your bridge and create a user read the [Getting Started Guide](https://developers.meethue.com/documentation/getting-started)
 
 You can also try this bash-script: 
 ```
@@ -52,6 +52,7 @@ echo "export HUEVENT_ID="<YOUR SENSOR ID>"
 ## Licence
 
 Copyright (c) 2018 Mathias Perlet
+
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.

@@ -8,17 +8,17 @@ import "encoding/json"
 import "time"
 
 type config struct {
-	uri            string
-	deviceId       string
-	buttonStateMap *map[int]string
-	responseMap    *map[string]interface{}
-	pollTimeMs     time.Duration
-	logHTTPError   bool
+	uri          string
+	deviceIds    []string
+	hasFilter    bool
+	stateMap     *map[string]map[string]string
+	responseMap  *map[string]interface{}
+	pollTimeMs   time.Duration
+	logHTTPError bool
 }
 
 func main() {
-
-	var conf = makeConfig()
+	var conf = makeConfig(os.Args[1:])
 
 	for {
 		poll(&conf)
@@ -27,16 +27,23 @@ func main() {
 
 }
 
-func makeConfig() config {
-	buttonStateMap := make(map[int]string)
+func makeConfig(deviceIds []string) config {
+	stateMap := make(map[string]map[string]string)
+	var hasFilter = false
+
+	for _, deviceID := range deviceIds {
+		stateMap[deviceID] = make(map[string]string)
+		hasFilter = true
+	}
 	responseMap := make(map[string]interface{})
 	return config{
-		uri:            os.Getenv("HUEVENT_URI"),
-		deviceId:       os.Getenv("HUEVENT_ID"),
-		buttonStateMap: &buttonStateMap,
-		responseMap:    &responseMap,
-		pollTimeMs:     333,
-		logHTTPError:   true}
+		uri:          os.Getenv("HUEVENT_URI"),
+		deviceIds:    deviceIds,
+		stateMap:     &stateMap,
+		responseMap:  &responseMap,
+		hasFilter:    hasFilter,
+		pollTimeMs:   333,
+		logHTTPError: true}
 }
 
 func poll(conf *config) {
@@ -64,41 +71,89 @@ func poll(conf *config) {
 	}
 }
 
-func exit(keyCode int) {
-	fmt.Println(keyCode)
+func exit(device string, eventType string, keyCode string) {
+	fmt.Printf("%s\t%s\t%s\n", device, eventType, keyCode)
 	os.Exit(0)
 }
 
-func updateButtonMap(update map[string]interface{}, conf *config) {
+func updateButtonMap(update map[string]interface{}, conf *config, device1 interface{}) {
+	var device = device1.(string)
 
-	var key = int(update["buttonevent"].(float64))
+	var btnStateMap = (*conf.stateMap)[device]
+
+	var key = "unknown"
+	var eventType = "unknown"
+
+	if update["buttonevent"] != nil {
+		key = fmt.Sprintf("%v", update["buttonevent"].(float64))
+		eventType = "buttonevent"
+	}
+
+	if update["presence"] != nil {
+		key = fmt.Sprintf("%v", update["presence"].(bool))
+		eventType = "presence"
+	}
+
+	if update["lightlevel"] != nil {
+		key = fmt.Sprintf("%v", update["lightlevel"].(float64))
+		eventType = "lightlevel"
+	}
+
+	if update["temperature"] != nil {
+		key = fmt.Sprintf("%v", update["temperature"].(float64))
+		eventType = "temperature"
+	}
+
+	if eventType == "unknown" {
+		return
+	}
+
 	var value = update["lastupdated"].(string)
-
 	// check for known button
-	if val, ok := (*conf.buttonStateMap)[key]; ok {
+	if val, ok := btnStateMap[key]; ok {
 		// check if button pressed
 		if val != value {
-			exit(key)
+			exit(device, eventType, key)
 		}
 	} else {
 		// unknown button, check for initial run
-		if len((*conf.buttonStateMap)) != 0 {
-			exit(key)
+		if len(btnStateMap) != 0 {
+			exit(device, eventType, key)
 		}
 	}
 
-	(*conf.buttonStateMap)[key] = value
+	btnStateMap[key] = value
 }
 
 func parseJSONMap(jsonAsMap *map[string]interface{}, conf *config) {
 	for _, v := range *jsonAsMap {
 		if subObject, ok := v.(map[string]interface{}); ok {
 			if deviceId, ok := subObject["uniqueid"]; ok {
-				if stateObject, ok := subObject["state"]; ok && deviceId == conf.deviceId {
-					updateButtonMap(stateObject.(map[string]interface{}), conf)
+				addNewSensorToStateMap(deviceId, conf)
+				if stateObject, ok := subObject["state"]; ok && hasKey(deviceId, conf.stateMap) {
+					updateButtonMap(stateObject.(map[string]interface{}), conf, deviceId)
 				}
 			}
 			parseJSONMap(&subObject, conf)
 		}
 	}
+}
+
+func addNewSensorToStateMap(deviceId interface{}, conf *config) {
+	if conf.hasFilter {
+		// do not add a sensor if the argument filter is enabled
+		return
+	}
+
+	if _, ok := (*conf.stateMap)[deviceId.(string)]; ok {
+		// do not add the sensor if the sensor is still added
+		return
+	}
+	// allocate a new state map, add device to stateMap
+	(*conf.stateMap)[deviceId.(string)] = make(map[string]string)
+}
+
+func hasKey(a interface{}, map1 *map[string]map[string]string) bool {
+	_, ok := (*map1)[a.(string)]
+	return ok
 }

@@ -6,6 +6,8 @@ import "os"
 import "io/ioutil"
 import "encoding/json"
 import "time"
+import "os/exec"
+import "flag"
 
 type config struct {
 	uri          string
@@ -15,11 +17,30 @@ type config struct {
 	responseMap  *map[string]interface{}
 	pollTimeMs   time.Duration
 	logHTTPError bool
+	shouldExit   bool
+	hooks        *[]hook
+	DEBUG        bool
+}
+
+type hook struct {
+	DeviceID  string `json:deviceId`
+	EventType string `json:eventType`
+	KeyCode   string `json:keyCode,omitempty`
+	Cmd       string `json:cmd`
+}
+
+func myUsage() {
+	fmt.Printf("Usage: %s [OPTIONS] argument ...\n", os.Args[0])
+	fmt.Printf("Huevent polls your Hue Bridge!\n")
+	flag.PrintDefaults()
 }
 
 func main() {
-	var conf = makeConfig(os.Args[1:])
-
+	var conf = makeConfig()
+	if conf.DEBUG {
+		fmt.Printf("current configuration: %#v\n", conf)
+		fmt.Printf("current hooks: %#v\n", conf.hooks)
+	}
 	for {
 		poll(&conf)
 		time.Sleep(conf.pollTimeMs * time.Millisecond)
@@ -27,14 +48,37 @@ func main() {
 
 }
 
-func makeConfig(deviceIds []string) config {
+func makeConfig() config {
+
+	exitOnEvent := flag.Bool("exit", false, "exit on event")
+	hookConfig := flag.String("hookConfig", "", "path to config file")
+	debug := flag.Bool("debug", false, "enable some debug output")
+
+	flag.Usage = myUsage
+	flag.Parse()
+
+	var hooks = []hook{}
+
+	if *hookConfig != "" {
+		content, readErr := ioutil.ReadFile(*hookConfig)
+		if readErr != nil {
+			panic(readErr)
+		}
+		unmarshalErr := json.Unmarshal(content, &hooks)
+		if unmarshalErr != nil {
+			panic(unmarshalErr)
+		}
+	}
+
 	stateMap := make(map[string]map[string]string)
 	var hasFilter = false
+	var deviceIds = flag.Args()
 
 	for _, deviceID := range deviceIds {
 		stateMap[deviceID] = make(map[string]string)
 		hasFilter = true
 	}
+
 	responseMap := make(map[string]interface{})
 	return config{
 		uri:          os.Getenv("HUEVENT_URI"),
@@ -43,7 +87,10 @@ func makeConfig(deviceIds []string) config {
 		responseMap:  &responseMap,
 		hasFilter:    hasFilter,
 		pollTimeMs:   333,
-		logHTTPError: true}
+		logHTTPError: true,
+		hooks:        &hooks,
+		shouldExit:   *exitOnEvent,
+		DEBUG:        *debug}
 }
 
 func poll(conf *config) {
@@ -71,9 +118,24 @@ func poll(conf *config) {
 	}
 }
 
-func exit(device string, eventType string, keyCode string) {
+func exit(device string, eventType string, keyCode string, conf *config) {
 	fmt.Printf("%s\t%s\t%s\n", device, eventType, keyCode)
-	os.Exit(0)
+
+	for _, hook := range *conf.hooks {
+
+		if hook.DeviceID != device && hook.EventType != eventType {
+			continue
+		}
+
+		if hook.KeyCode == "" || hook.KeyCode == keyCode {
+			go System(hook.Cmd, device, eventType, keyCode)
+		}
+
+	}
+
+	if conf.shouldExit {
+		os.Exit(0)
+	}
 }
 
 func updateButtonMap(update map[string]interface{}, conf *config, device1 interface{}) {
@@ -113,12 +175,12 @@ func updateButtonMap(update map[string]interface{}, conf *config, device1 interf
 	if val, ok := btnStateMap[key]; ok {
 		// check if button pressed
 		if val != value {
-			exit(device, eventType, key)
+			exit(device, eventType, key, conf)
 		}
 	} else {
 		// unknown button, check for initial run
 		if len(btnStateMap) != 0 {
-			exit(device, eventType, key)
+			exit(device, eventType, key, conf)
 		}
 	}
 
@@ -156,4 +218,18 @@ func addNewSensorToStateMap(deviceId interface{}, conf *config) {
 func hasKey(a interface{}, map1 *map[string]map[string]string) bool {
 	_, ok := (*map1)[a.(string)]
 	return ok
+}
+
+func System(cmdString string, deviceId string, eventType string, payload string) error {
+	cmd := exec.Command("/bin/sh", "-c", cmdString)
+
+	extraEnv := []string{
+		fmt.Sprintf("HUEVENT_DEVICE_ID=%s", deviceId),
+		fmt.Sprintf("HUEVENT_EVENT_TYPE=%s", eventType),
+		fmt.Sprintf("HUEVENT_PAYLOAD=%s", payload)}
+
+	cmd.Env = append(os.Environ(), extraEnv...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }

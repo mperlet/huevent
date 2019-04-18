@@ -20,7 +20,7 @@ Usage: ./huevent [OPTIONS]
 
 ```
 ./huevent 
-00:00:00:00:00:42:43:2f-f2	    buttonevent	16
+00:00:00:00:00:42:43:2f-f3      buttonevent	16
 00:17:88:01:10:33:35:98-02-fc00	buttonevent	1000
 00:17:88:01:03:29:57:55-02-0402	temperature	2134
 00:17:88:01:03:29:57:55-02-0406	presence	false
@@ -54,7 +54,9 @@ echo "$BRIDGE_IP $USERNAME"
 ## Configfile
 
 `config`: Hue Bridge IP with Token
+
 `hooks`: Execute commands on specific events
+
 `deviceFilter`: Array(string) of deviceIds, ignore all other devices 
 
 
@@ -104,16 +106,10 @@ echo "$BRIDGE_IP $USERNAME"
 * A Remote for Fritz Dect200 Power-Sockets
 * Trigger <Insert-Your-Idea-Here>
 
-### Planned Features 
-
-* Commandline Arguments (version, help)
-* Multi Button
-* Temperature/Light Sensor Value Change Events
-
 
 ## Licence
 
-Copyright (c) 2018 Mathias Perlet
+Copyright (c) 2019 Mathias Perlet
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 

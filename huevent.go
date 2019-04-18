@@ -1,13 +1,17 @@
 package main
 
-import "fmt"
-import "net/http"
-import "os"
-import "io/ioutil"
-import "encoding/json"
-import "time"
-import "os/exec"
-import "flag"
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"os/exec"
+	"path"
+	"time"
+)
 
 type config struct {
 	uri          string
@@ -18,29 +22,52 @@ type config struct {
 	pollTimeMs   time.Duration
 	logHTTPError bool
 	shouldExit   bool
-	hooks        *[]hook
+	hooks        *[]Hook
 	DEBUG        bool
 }
 
-type hook struct {
-	DeviceID  string `json:deviceId`
-	EventType string `json:eventType`
-	KeyCode   string `json:keyCode,omitempty`
-	Cmd       string `json:cmd`
+type HueventConfig struct {
+	Config struct {
+		Ip   string `json:"ip"`
+		User string `json:"user"`
+	} `json:"config"`
+	Hooks        []Hook   `json:"hooks"`
+	DeviceFilter []string `json:"deviceFilter"`
 }
 
-func myUsage() {
-	fmt.Printf("Usage: %s [OPTIONS] argument ...\n", os.Args[0])
-	fmt.Printf("Huevent polls your Hue Bridge!\n")
-	flag.PrintDefaults()
+type Hook struct {
+	DeviceID  string `json:"deviceId"`
+	EventType string `json:"eventType"`
+	KeyCode   string `json:"keyCode,omitempty"`
+	Cmd       string `json:"cmd"`
 }
+
+type hueBridgeResponse struct {
+	ID                string `json:"id"`
+	InternalIpaddress string `json:"internalipaddress"`
+}
+
+type hueBridgePairResponse struct {
+	Error struct {
+		Type        string
+		Address     string
+		Description string
+	}
+	Success struct {
+		Username string
+	}
+}
+
+// DEBUG huevent debug flag
+var DEBUG = false
 
 func main() {
 	var conf = makeConfig()
+
 	if conf.DEBUG {
 		fmt.Printf("current configuration: %#v\n", conf)
-		fmt.Printf("current hooks: %#v\n", conf.hooks)
 	}
+
 	for {
 		poll(&conf)
 		time.Sleep(conf.pollTimeMs * time.Millisecond)
@@ -48,31 +75,115 @@ func main() {
 
 }
 
+func myUsage() {
+	fmt.Printf("huevent - get events from buttons and sensors\n")
+	fmt.Printf("Usage: %s [OPTIONS] \n", os.Args[0])
+	flag.PrintDefaults()
+}
+
+func pairBridge(configpath string) {
+
+	if DEBUG {
+		fmt.Printf("pair bridge, ask https://www.meethue.com/api/nupnp\n")
+	}
+
+	resp, err := http.Get("https://www.meethue.com/api/nupnp")
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if DEBUG {
+		fmt.Printf("response from https://www.meethue.com/api/nupnp %s\n", body)
+	}
+
+	var hueBridges = []hueBridgeResponse{}
+	unmarshalErr := json.Unmarshal(body, &hueBridges)
+
+	if unmarshalErr != nil {
+		panic(unmarshalErr)
+	}
+
+	if len(hueBridges) == 0 {
+		fmt.Printf("no bridges found\n")
+		os.Exit(1)
+	}
+
+	values := map[string]string{"devicetype": "huevent"}
+
+	jsonValue, _ := json.Marshal(values)
+
+	var uri = fmt.Sprintf("http://%s/api", hueBridges[0].InternalIpaddress)
+
+	resp, err = http.Post(uri, "application/json", bytes.NewBuffer(jsonValue))
+
+	//noinspection ALL
+	body, err = ioutil.ReadAll(resp.Body)
+
+	if DEBUG {
+		fmt.Printf("response pairing %s:  %s\n", hueBridges[0].InternalIpaddress, body)
+	}
+
+	var hueResponse []hueBridgePairResponse
+	_ = json.Unmarshal(body, &hueResponse)
+
+	if hueResponse[0].Success.Username == "" {
+		fmt.Printf("Error while pairing with %s: %s \n", hueBridges[0].InternalIpaddress, hueResponse[0].Error.Description)
+		os.Exit(1)
+	}
+
+	var pairingSuccess = map[string]map[string]string{}
+	pairingSuccess["config"] = map[string]string{}
+	pairingSuccess["config"]["ip"] = hueBridges[0].InternalIpaddress
+	pairingSuccess["config"]["user"] = hueResponse[0].Success.Username
+
+	var currentConfig = readConfig(configpath)
+	currentConfig.Config.Ip = hueBridges[0].InternalIpaddress
+	currentConfig.Config.User = hueResponse[0].Success.Username
+	writeConfig(currentConfig, configpath)
+
+	os.Exit(0)
+}
+
 func makeConfig() config {
 
 	exitOnEvent := flag.Bool("exit", false, "exit on event")
-	hookConfig := flag.String("hookConfig", "", "path to config file")
+	hueventConfigPath := flag.String("config", configPath(), "path to config file")
 	debug := flag.Bool("debug", false, "enable some debug output")
+
+	pair := flag.Bool("pair", false, "pair hue bridge")
 
 	flag.Usage = myUsage
 	flag.Parse()
 
-	var hooks = []hook{}
+	DEBUG = *debug
 
-	if *hookConfig != "" {
-		content, readErr := ioutil.ReadFile(*hookConfig)
-		if readErr != nil {
-			panic(readErr)
-		}
-		unmarshalErr := json.Unmarshal(content, &hooks)
-		if unmarshalErr != nil {
-			panic(unmarshalErr)
-		}
+	if *pair {
+		pairBridge(*hueventConfigPath)
+	}
+
+	var hueventConfig = readConfig(*hueventConfigPath)
+
+	if *debug {
+		fmt.Printf("Read Config %+s\n", hueventConfig)
+	}
+
+	if hueventConfig.Config.Ip == "" || hueventConfig.Config.User == "" {
+		fmt.Printf("Error: no Hue-Bridge configured at %s, run huevent with -pair to configure\n", *hueventConfigPath)
+		os.Exit(1)
 	}
 
 	stateMap := make(map[string]map[string]string)
 	var hasFilter = false
-	var deviceIds = flag.Args()
+	var deviceIds = hueventConfig.DeviceFilter
 
 	for _, deviceID := range deviceIds {
 		stateMap[deviceID] = make(map[string]string)
@@ -81,14 +192,14 @@ func makeConfig() config {
 
 	responseMap := make(map[string]interface{})
 	return config{
-		uri:          os.Getenv("HUEVENT_URI"),
+		uri:          fmt.Sprintf("http://%s/api/%s/sensors", hueventConfig.Config.Ip, hueventConfig.Config.User),
 		deviceIds:    deviceIds,
 		stateMap:     &stateMap,
 		responseMap:  &responseMap,
 		hasFilter:    hasFilter,
 		pollTimeMs:   333,
 		logHTTPError: true,
-		hooks:        &hooks,
+		hooks:        &hueventConfig.Hooks,
 		shouldExit:   *exitOnEvent,
 		DEBUG:        *debug}
 }
@@ -98,7 +209,7 @@ func poll(conf *config) {
 
 	if err != nil {
 		if conf.logHTTPError {
-			fmt.Fprintln(os.Stderr, err)
+			_, _ = fmt.Fprintln(os.Stderr, err)
 			conf.logHTTPError = false
 		}
 		return
@@ -107,10 +218,10 @@ func poll(conf *config) {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err == nil {
-		json.Unmarshal(body, conf.responseMap)
+		_ = json.Unmarshal(body, conf.responseMap)
 		parseJSONMap(conf.responseMap, conf)
 	} else {
-		fmt.Fprintln(os.Stderr, err)
+		_, _ = fmt.Fprintln(os.Stderr, err)
 	}
 
 	if !conf.logHTTPError {
@@ -128,7 +239,8 @@ func exit(device string, eventType string, keyCode string, conf *config) {
 		}
 
 		if hook.KeyCode == "" || hook.KeyCode == keyCode {
-			go System(hook.Cmd, device, eventType, keyCode)
+			//noinspection ALL
+			go executeCommand(hook.Cmd, device, eventType, keyCode)
 		}
 
 	}
@@ -220,7 +332,7 @@ func hasKey(a interface{}, map1 *map[string]map[string]string) bool {
 	return ok
 }
 
-func System(cmdString string, deviceId string, eventType string, payload string) error {
+func executeCommand(cmdString string, deviceId string, eventType string, payload string) error {
 	cmd := exec.Command("/bin/sh", "-c", cmdString)
 
 	extraEnv := []string{
@@ -232,4 +344,51 @@ func System(cmdString string, deviceId string, eventType string, payload string)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func PathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func configPath() string {
+	var configDirectory = path.Join(os.Getenv("HOME"), ".huevent")
+	return path.Join(configDirectory, "config.json")
+}
+
+func readConfig(filepath string) HueventConfig {
+	var hueventConfig = HueventConfig{}
+
+	content, readErr := ioutil.ReadFile(filepath)
+
+	if readErr != nil {
+		writeConfig(HueventConfig{}, filepath)
+	}
+
+	unmarshalErr := json.Unmarshal(content, &hueventConfig)
+	if unmarshalErr != nil {
+		fmt.Printf("Can't parse config file (%s), delete it and create a new with -pair argument", filepath)
+	}
+	return hueventConfig
+}
+
+func writeConfig(config HueventConfig, filepath string) {
+	var a, _ = json.MarshalIndent(config, "", "  ")
+
+	if DEBUG {
+		fmt.Printf("Write Config %s \n %s \n", filepath, a)
+	}
+
+	if !PathExists(filepath) {
+		var configDir = path.Dir(filepath)
+		dirErr := os.MkdirAll(configDir, 0755)
+		if dirErr != nil {
+			panic(dirErr)
+		}
+	}
+
+	writeErr := ioutil.WriteFile(filepath, a, 0644)
+	if writeErr != nil {
+		panic(writeErr)
+	}
 }

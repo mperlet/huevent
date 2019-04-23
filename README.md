@@ -58,29 +58,11 @@ Usage: ./huevent [OPTIONS]
 |                   | lightlevel             | xxxxx                  | Lightlevel (0 ~ dark, 20000 ~ normal, 40000 ~ very bright)    |
 
 
-
-## Build
-
-```
-git clone https://github.com/mperlet/huevent.git && cd huevent
-docker run --rm -v "$PWD":/huevent:Z -w /huevent -e GOOS=linux -e GOARCH=amd64 golang:1.12.1-stretch go build huevent.go
-```
-
 ## Configuration
 
 Run `huevent -pair` to pair a local Hue Bridge.
 
-
-```
-# Press Hue Bridge Button before you ran these commands
-BRIDGE_IP=$(curl https://www.meethue.com/api/nupnp -s | grep -E -o "([0-9]{1,3}[.]){3}[0-9]{1,3}")
-USERNAME=$(curl -s -X POST -d'{"devicetype":"huevent"}' "http://$BRIDGE_IP/api" | grep -P -o '":"(.*)"' | cut -d '"' -f3)
-
-echo "$BRIDGE_IP $USERNAME"
-
-```
-
-## Configfile
+### Configfile
 
 `config`: Hue Bridge IP with Token
 
@@ -116,6 +98,23 @@ hooks:
 deviceFilter: []
 ```
 
+### Manual Pairing
+
+```
+# Press Hue Bridge Button before you ran these commands
+BRIDGE_IP=$(curl https://www.meethue.com/api/nupnp -s | grep -E -o "([0-9]{1,3}[.]){3}[0-9]{1,3}")
+USERNAME=$(curl -s -X POST -d'{"devicetype":"huevent"}' "http://$BRIDGE_IP/api" | grep -P -o '":"(.*)"' | cut -d '"' -f3)
+
+echo "$BRIDGE_IP $USERNAME"
+
+```
+
+## Build
+
+```
+git clone https://github.com/mperlet/huevent.git && cd huevent
+docker run --rm -v "$PWD":/huevent:Z -w /huevent -e GOOS=linux -e GOARCH=amd64 golang:1.12.4-stretch go build huevent.go
+```
 
 ## Examples
 

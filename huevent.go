@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 	"os/exec"
 	"path"
 	"time"
-	"gopkg.in/yaml.v2"
 )
 
 type config struct {
@@ -40,7 +40,7 @@ type HueventConfig struct {
 type Hook struct {
 	DeviceID  string `yaml:"deviceId"`
 	EventType string `yaml:"eventType"`
-	TriggerOn   string `yaml:"triggerOn,omitempty"`
+	TriggerOn string `yaml:"triggerOn,omitempty"`
 	Cmd       string `yaml:"cmd"`
 }
 

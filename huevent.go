@@ -6,11 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path"
 	"time"
+	"gopkg.in/yaml.v2"
 )
 
 type config struct {
@@ -28,18 +30,18 @@ type config struct {
 
 type HueventConfig struct {
 	Config struct {
-		Ip   string `json:"ip"`
-		User string `json:"user"`
-	} `json:"config"`
-	Hooks        []Hook   `json:"hooks"`
-	DeviceFilter []string `json:"deviceFilter"`
+		Ip   string `yaml:"ip"`
+		User string `yaml:"user"`
+	} `yaml:"config"`
+	Hooks        []Hook   `yaml:"hooks"`
+	DeviceFilter []string `yaml:"deviceFilter"`
 }
 
 type Hook struct {
-	DeviceID  string `json:"deviceId"`
-	EventType string `json:"eventType"`
-	KeyCode   string `json:"keyCode,omitempty"`
-	Cmd       string `json:"cmd"`
+	DeviceID  string `yaml:"deviceId"`
+	EventType string `yaml:"eventType"`
+	TriggerOn   string `yaml:"triggerOn,omitempty"`
+	Cmd       string `yaml:"cmd"`
 }
 
 type hueBridgeResponse struct {
@@ -229,8 +231,8 @@ func poll(conf *config) {
 	}
 }
 
-func exit(device string, eventType string, keyCode string, conf *config) {
-	fmt.Printf("%s\t%s\t%s\n", device, eventType, keyCode)
+func exit(device string, eventType string, triggerOn string, conf *config) {
+	fmt.Printf("%s\t%s\t%s\n", device, eventType, triggerOn)
 
 	for _, hook := range *conf.hooks {
 
@@ -238,9 +240,9 @@ func exit(device string, eventType string, keyCode string, conf *config) {
 			continue
 		}
 
-		if hook.KeyCode == "" || hook.KeyCode == keyCode {
+		if hook.TriggerOn == "" || hook.TriggerOn == triggerOn {
 			//noinspection ALL
-			go executeCommand(hook.Cmd, device, eventType, keyCode)
+			go executeCommand(hook.Cmd, device, eventType, triggerOn)
 		}
 
 	}
@@ -353,7 +355,7 @@ func PathExists(path string) bool {
 
 func configPath() string {
 	var configDirectory = path.Join(os.Getenv("HOME"), ".huevent")
-	return path.Join(configDirectory, "config.json")
+	return path.Join(configDirectory, "huevent.yml")
 }
 
 func readConfig(filepath string) HueventConfig {
@@ -365,7 +367,7 @@ func readConfig(filepath string) HueventConfig {
 		writeConfig(HueventConfig{}, filepath)
 	}
 
-	unmarshalErr := json.Unmarshal(content, &hueventConfig)
+	unmarshalErr := yaml.Unmarshal(content, &hueventConfig)
 	if unmarshalErr != nil {
 		fmt.Printf("Can't parse config file (%s), delete it and create a new with -pair argument", filepath)
 	}
@@ -373,7 +375,11 @@ func readConfig(filepath string) HueventConfig {
 }
 
 func writeConfig(config HueventConfig, filepath string) {
-	var a, _ = json.MarshalIndent(config, "", "  ")
+
+	var a, err = yaml.Marshal(&config)
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
 
 	if DEBUG {
 		fmt.Printf("Write Config %s \n %s \n", filepath, a)

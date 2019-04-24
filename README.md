@@ -121,6 +121,11 @@ docker run --rm -v "$PWD":/huevent:Z -w /huevent -e GOOS=linux -e GOARCH=amd64 g
 * A Remote for Fritz Dect200 Power-Sockets
 * Trigger <Insert-Your-Idea-Here>
 
+## Goreleaser 
+
+```
+docker run --rm --privileged -v $PWD:/go/src/github.com/user/repo -v /var/run/docker.sock:/var/run/docker.sock -w /go/src/github.com/user/repo goreleaser/goreleaser release --skip-publish --skip-validate --rm-dist
+```
 
 ## Licence
 

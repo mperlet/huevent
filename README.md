@@ -5,17 +5,18 @@
 ## Example
 
 ```
-./huevent -h
 huevent - get events from buttons and sensors
 Usage: ./huevent [OPTIONS] 
   -config string
-    	path to config file (default "/home/mathias/.huevent/config.json")
+    	path to config file (default "~/.huevent/huevent.yml")
   -debug
     	enable some debug output
   -exit
     	exit on event
   -pair
     	pair hue bridge
+  -sensors
+    	print sensors response and exit
 ```
 
 ```
@@ -96,6 +97,14 @@ hooks:
   eventType: temperature
   cmd: python -c 'import os; print(str(float(os.environ["HUEVENT_PAYLOAD"])/100.0) + "°C")'
 deviceFilter: []
+```
+
+> The default Hue-Bridge polling rate is 333ms. You can set a *> 1ms* rate via 
+```
+config:
+  ip: 192.168....
+  user: nEh...
+  pollingRateMs: 200
 ```
 
 ### Manual Pairing

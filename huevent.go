@@ -26,12 +26,14 @@ type config struct {
 	shouldExit   bool
 	hooks        *[]Hook
 	DEBUG        bool
+	printSensors bool
 }
 
 type HueventConfig struct {
 	Config struct {
 		Ip   string `yaml:"ip"`
 		User string `yaml:"user"`
+		Rate int `yaml:"pollingRateMs,omitempty"`
 	} `yaml:"config"`
 	Hooks        []Hook   `yaml:"hooks"`
 	DeviceFilter []string `yaml:"deviceFilter"`
@@ -159,6 +161,7 @@ func makeConfig() config {
 
 	exitOnEvent := flag.Bool("exit", false, "exit on event")
 	hueventConfigPath := flag.String("config", configPath(), "path to config file")
+	printSensors := flag.Bool("sensors", false, "print sensors response and exit")
 	debug := flag.Bool("debug", false, "enable some debug output")
 
 	pair := flag.Bool("pair", false, "pair hue bridge")
@@ -182,6 +185,16 @@ func makeConfig() config {
 		fmt.Printf("Error: no Hue-Bridge configured at %s, run huevent with -pair to configure\n", *hueventConfigPath)
 		os.Exit(1)
 	}
+	
+	var pollTimeMs = time.Duration(333)
+
+	if hueventConfig.Config.Rate > 0 {
+		pollTimeMs = time.Duration(hueventConfig.Config.Rate)
+	}
+	
+	if *debug {
+		fmt.Printf("Polling-Rate: %s\n", pollTimeMs * time.Millisecond)
+	}
 
 	stateMap := make(map[string]map[string]string)
 	var hasFilter = false
@@ -199,11 +212,12 @@ func makeConfig() config {
 		stateMap:     &stateMap,
 		responseMap:  &responseMap,
 		hasFilter:    hasFilter,
-		pollTimeMs:   333,
+		pollTimeMs:   pollTimeMs,
 		logHTTPError: true,
 		hooks:        &hueventConfig.Hooks,
 		shouldExit:   *exitOnEvent,
-		DEBUG:        *debug}
+		DEBUG:        *debug,
+		printSensors: *printSensors}
 }
 
 func poll(conf *config) {
@@ -228,6 +242,13 @@ func poll(conf *config) {
 
 	if !conf.logHTTPError {
 		conf.logHTTPError = true
+	}
+	
+	if conf.printSensors {
+		var prettyJSON bytes.Buffer
+		_ = json.Indent(&prettyJSON, body, "", "\t")
+		fmt.Printf("%s\n", prettyJSON.String())
+		os.Exit(0)
 	}
 }
 

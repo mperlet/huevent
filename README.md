@@ -1,6 +1,6 @@
 # Huevent - Events for Philips-Hue buttons and sensors
 
-> Simple program that terminates when a Philips Hue button is pressed.
+> Handle events from hue sensors
 
 ## Example
 

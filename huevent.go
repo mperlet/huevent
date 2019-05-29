@@ -257,7 +257,7 @@ func exit(device string, eventType string, triggerOn string, conf *config) {
 
 	for _, hook := range *conf.hooks {
 
-		if hook.DeviceID != device && hook.EventType != eventType {
+		if hook.DeviceID != device || hook.EventType != eventType {
 			continue
 		}
 

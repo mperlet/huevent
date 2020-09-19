@@ -88,10 +88,10 @@ func myUsage() {
 func pairBridge(configpath string) {
 
 	if DEBUG {
-		fmt.Printf("pair bridge, ask https://www.meethue.com/api/nupnp\n")
+		fmt.Printf("pair bridge, ask https://discovery.meethue.com/\n")
 	}
 
-	resp, err := http.Get("https://www.meethue.com/api/nupnp")
+	resp, err := http.Get("https://discovery.meethue.com/")
 
 	if err != nil {
 		panic(err)
@@ -106,7 +106,7 @@ func pairBridge(configpath string) {
 	}
 
 	if DEBUG {
-		fmt.Printf("response from https://www.meethue.com/api/nupnp %s\n", body)
+		fmt.Printf("response from https://discovery.meethue.com/ %s\n", body)
 	}
 
 	var hueBridges = []hueBridgeResponse{}

@@ -122,7 +122,7 @@ echo "$BRIDGE_IP $USERNAME"
 
 ```
 git clone https://github.com/mperlet/huevent.git && cd huevent
-docker run --rm -v "$PWD":/huevent:Z -w /huevent -e GOOS=linux -e GOARCH=amd64 golang:1.12.4-stretch go build huevent.go
+docker run --rm -v "$PWD":/huevent:Z -w /huevent -e GOOS=linux -e GOARCH=amd64 golang:1.15.2-buster go build huevent.go
 ```
 
 ## Examples
